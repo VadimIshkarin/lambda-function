@@ -1,39 +1,36 @@
-const {
-  S3Client,
-  GetObjectCommand,
-  PutObjectCommand,
-} = require("@aws-sdk/client-s3");
+const AWS = require("aws-sdk");
 const Jimp = require("jimp");
-const s3 = new S3Client({ region: "us-east-1" });
-exports.handler = async (event) => {
-  const srcBucket = event.Records[0].s3.bucket.name;
-  const srcKey = decodeURIComponent(
+
+const s3 = new AWS.S3({ apiVersion: "2006-03-01" });
+
+exports.handler = async (event, context) => {
+  const bucket = event.Records[0].s3.bucket.name;
+  const key = decodeURIComponent(
     event.Records[0].s3.object.key.replace(/\+/g, " ")
   );
-  const dstBucket = srcBucket;
-  const dstKey = `resized/${srcKey}`;
-  try {
-    const params = {
-      Bucket: srcBucket,
-      Key: srcKey,
-    };
-    const image = await s3.send(new GetObjectCommand(params));
-    const jimpImage = await Jimp.read(image.Body);
-    jimpImage.resize(200, Jimp.AUTO);
 
-    const resizedImage = await jimpImage.getBufferAsync(Jimp.MIME_JPEG);
-    // const resizedImage = await Jimp(image.Body).resize(200, 200).toBuffer();
-    const putParams = {
-      Bucket: dstBucket,
-      Key: dstKey,
-      Body: resizedImage,
-      ContentType: "image/jpeg",
-    };
-    await s3.send(new PutObjectCommand(putParams));
-    console.log(
-      `Successfully resized ${srcBucket}/${srcKey} and uploaded to ${dstBucket}/${dstKey}`
+  try {
+    const imageObject = await s3
+      .getObject({ Bucket: bucket, Key: key })
+      .promise();
+    const image = await Jimp.read(imageObject.Body);
+
+    const resizedImage = image.resize(100, 100);
+    const resizedImageBuffer = await resizedImage.getBufferAsync(
+      Jimp.MIME_JPEG
     );
+
+    const resizedImageKey = `resized-${key}`;
+    await s3
+      .putObject({
+        Bucket: bucket,
+        Key: resizedImageKey,
+        Body: resizedImageBuffer,
+      })
+      .promise();
+
+    console.log(`Successfully resized and uploaded image: ${resizedImageKey}`);
   } catch (error) {
-    console.error(`Error resizing image: ${error}`);
+    console.error(`Error resizing and uploading image: ${error}`);
   }
 };
